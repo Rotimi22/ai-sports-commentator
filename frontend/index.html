@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live AI Sports Commentator</title>
+    <meta name="description" content="Live AI Sports Commentator delivers real-time match commentary, voice interaction, and cinematic sports studio visuals powered by AI." />
+    <!-- CRITICAL: DO NOT REMOVE/MODIFY THIS COMMENT OR THE SCRIPT BELOW -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+var API_BASE = "http://localhost:8000";
+var voiceConversation = null;
+var isVoiceActive = false;
+
+var voiceOrb = document.querySelector(".voice-orb")
+    || document.querySelector("[data-voice-orb]")
+    || document.querySelector(".mic-button")
+    || document.querySelector(".orb");
+
+if (voiceOrb) {
+    voiceOrb.addEventListener("click", function() {
+        if (isVoiceActive) {
+            stopVoiceSession();
+        } else {
+            startVoiceSession();
+        }
+    });
+}
+
+async function startVoiceSession() {
+    try {
+        if (voiceOrb) {
+            voiceOrb.classList.add("active", "listening");
+        }
+
+        var res = await fetch(API_BASE + "/agent/signed-url");
+        if (!res.ok) {
+            throw new Error("Backend returned " + res.status);
+        }
+        var data = await res.json();
+        var signed_url = data.signed_url;
+        console.log("Got signed URL, connecting to ElevenLabs...");
+
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        var ws = new WebSocket(signed_url);
+
+        ws.onopen = function() {
+            console.log("Connected to ElevenLabs voice agent");
+            isVoiceActive = true;
+            if (voiceOrb) {
+                voiceOrb.setAttribute("data-status", "connected");
+            }
+        };
+
+        ws.onmessage = function(event) {
+            try {
+                var msg = JSON.parse(event.data);
+
+                if (msg.type === "agent_response" || msg.type === "transcript") {
+                    var commentaryEl = document.querySelector(".commentary-text")
+                        || document.querySelector(".ai-response")
+                        || document.querySelector("[data-commentary]");
+                    if (commentaryEl && msg.text) {
+                        commentaryEl.textContent = msg.text;
+                    }
+                    console.log("AI Commentator:", msg.text);
+                }
+
+                if (msg.type === "audio" && voiceOrb) {
+                    voiceOrb.setAttribute("data-status", "speaking");
+                }
+
+                if (msg.type === "user_transcript") {
+                    console.log("You said:", msg.text);
+                    if (voiceOrb) {
+                        voiceOrb.setAttribute("data-status", "listening");
+                    }
+                }
+            } catch (e) {
+                if (event.data instanceof Blob) {
+                    var audio = new Audio(URL.createObjectURL(event.data));
+                    audio.play();
+                }
+            }
+        };
+
+        ws.onclose = function() {
+            console.log("Voice session ended");
+            isVoiceActive = false;
+            if (voiceOrb) {
+                voiceOrb.classList.remove("active", "listening");
+                voiceOrb.setAttribute("data-status", "idle");
+            }
+        };
+
+        ws.onerror = function(err) {
+            console.error("Voice WebSocket error:", err);
+            isVoiceActive = false;
+            if (voiceOrb) {
+                voiceOrb.setAttribute("data-status", "error");
+            }
+        };
+
+        voiceConversation = ws;
+
+        var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        var mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+
+        mediaRecorder.ondataavailable = function(e) {
+            if (ws.readyState === WebSocket.OPEN && e.data.size > 0) {
+                ws.send(e.data);
+            }
+        };
+
+        mediaRecorder.start(250);
+        voiceConversation._mediaRecorder = mediaRecorder;
+        voiceConversation._stream = stream;
+
+    } catch (err) {
+        console.error("Failed to start voice session:", err);
+        isVoiceActive = false;
+        if (voiceOrb) {
+            voiceOrb.classList.remove("active", "listening");
+        }
+        alert("Could not start voice session. Make sure the backend is running and microphone access is allowed.");
+    }
+}
+
+function stopVoiceSession() {
+    if (voiceConversation) {
+        if (voiceConversation._mediaRecorder) {
+            voiceConversation._mediaRecorder.stop();
+        }
+        if (voiceConversation._stream) {
+            var tracks = voiceConversation._stream.getTracks();
+            for (var i = 0; i < tracks.length; i++) {
+                tracks[i].stop();
+            }
+        }
+        voiceConversation.close();
+        voiceConversation = null;
+    }
+    isVoiceActive = false;
+    if (voiceOrb) {
+        voiceOrb.classList.remove("active", "listening");
+        voiceOrb.setAttribute("data-status", "idle");
+    }
+    console.log("Voice session stopped");
+}
+</script>
+  </body>
+</html>
