@@ -275,7 +275,7 @@ export function MatchSelectionView({
       )}
 
       <footer className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-        <ShieldAlert className="size-4" /> Backend expected at http://localhost:8000
+        <ShieldAlert className="size-4" /> AI Sports Commentator
       </footer>
     </main>
   )

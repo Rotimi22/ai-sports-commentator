@@ -1,6 +1,6 @@
 import type { Fixture, FixturesResponse, MatchSnapshot, StartResponse } from './types'
 
-const API_BASE = 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function ensureOk(response: Response) {
   if (!response.ok) throw new Error(`Request failed: ${response.status}`)

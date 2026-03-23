@@ -13,7 +13,7 @@ export function ConnectionErrorView({ onRetry }: { onRetry: () => void }) {
           </div>
           <div>
             <h1 className="font-display text-4xl tracking-wide">Cannot connect to the commentary server</h1>
-            <p className="mt-3 text-muted-foreground">Make sure the backend is running on http://localhost:8000</p>
+            <p className="mt-3 text-muted-foreground">Cannot reach the commentary server. Please try again later.</p>
           </div>
           <Button variant="outline" size="lg" className="bg-transparent" onClick={onRetry}>
             <RefreshCw className="size-4" /> Retry
