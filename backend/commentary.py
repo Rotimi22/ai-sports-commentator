@@ -3,6 +3,8 @@ ElevenLabs Agents integration + commentary engine.
 - Builds dynamic system prompts from live match context
 - Manages the conversational agent session
 - Generates event-triggered commentary narration
+- Injects real-time match events into the active conversation
+  so the agent reacts and speaks about goals/cards/subs immediately
 """
 import json
 import httpx
@@ -24,6 +26,22 @@ You welcome interruptions and questions from the viewer — answer them as a tru
 Keep responses conversational but pundit-sharp. Max 3-4 sentences per commentary burst
 unless the viewer asks for more depth.
 """
+
+# Track the active conversation ID so we can inject events into it
+active_conversation_id = None
+
+
+def set_active_conversation(conversation_id):
+    """Called when the frontend establishes a voice session."""
+    global active_conversation_id
+    active_conversation_id = conversation_id
+    print("Active conversation set: " + str(conversation_id))
+
+
+def clear_active_conversation():
+    """Called when the voice session ends."""
+    global active_conversation_id
+    active_conversation_id = None
 
 
 def build_match_context_prompt(snapshot):
@@ -51,6 +69,50 @@ def build_match_context_prompt(snapshot):
         lines.append("FULL TIME - The match has ended.")
 
     return "\n".join(lines)
+
+
+def build_event_narration_prompt(snapshot):
+    """Build a natural-language prompt describing new events for the agent to react to."""
+    if not snapshot.get("new_events"):
+        return None
+
+    parts = []
+    for event in snapshot["new_events"]:
+        etype = event["type"].lower()
+        player = event["player"]
+        team = event["team"]
+        minute = str(event["minute"])
+        detail = event.get("detail", "")
+        enrichment = event.get("enrichment", "")
+
+        if "goal" in etype:
+            parts.append(
+                "GOAL! " + player + " scores for " + team + " in the " + minute + "' minute! "
+                "The score is now " + snapshot["score"] + ". "
+                + (enrichment[:200] if enrichment else "")
+            )
+        elif "card" in etype:
+            parts.append(
+                detail + " card for " + player + " of " + team + " at " + minute + "'. "
+                "This could change the game. "
+                + (enrichment[:200] if enrichment else "")
+            )
+        elif "subst" in etype:
+            parts.append(
+                "Substitution for " + team + " at " + minute + "'. " + player + " comes on. "
+                + (enrichment[:200] if enrichment else "")
+            )
+        else:
+            parts.append(
+                event["type"] + " — " + player + " (" + team + ") at " + minute + "'. "
+                + (enrichment[:150] if enrichment else "")
+            )
+
+    news = snapshot.get("match_news", "")
+    if news:
+        parts.append("Pre-match context: " + news[:150])
+
+    return " ".join(parts)
 
 
 async def get_or_create_agent():
@@ -89,9 +151,12 @@ async def get_or_create_agent():
 
 
 async def update_agent_context(agent_id, snapshot):
+    """Update the agent's system prompt with latest match state.
+    Also inject events into the active conversation if one exists."""
     context_text = build_match_context_prompt(snapshot)
 
     async with httpx.AsyncClient() as client:
+        # Update the agent's base prompt (affects new conversations and provides context)
         payload = {
             "conversation_config": {
                 "agent": {
@@ -122,6 +187,9 @@ async def get_signed_url(agent_id):
 
 
 async def generate_event_commentary(snapshot):
+    """Generate TTS audio for match events.
+    This serves as the backup/fallback narration system — it produces
+    audio clips even if the interactive voice session isn't active."""
     if not snapshot.get("new_events"):
         return None
 
